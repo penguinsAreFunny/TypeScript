@@ -3000,6 +3000,7 @@ namespace ts.server {
             let configFileErrors: readonly Diagnostic[] | undefined;
             let project: ConfiguredProject | ExternalProject | undefined = this.findExternalProjectContainingOpenScriptInfo(info);
             let retainProjects: ConfiguredProject[] | ConfiguredProject | undefined;
+            let projectForConfigFileDiag: ConfiguredProject | undefined;
             let defaultConfigProjectIsCreated = false;
             if (!project && !this.syntaxOnly) { // Checking syntaxOnly is an optimization
                 configFileName = this.getConfigFileNameForFile(info);
@@ -3013,12 +3014,12 @@ namespace ts.server {
                         // Ensure project is ready to check if it contains opened script info
                         updateProjectIfDirty(project);
                     }
-
+                    projectForConfigFileDiag = project.containsScriptInfo(info) ? project : undefined;
                     retainProjects = project;
 
                     // If this configured project doesnt contain script info but
                     // it is solution with project references, try those project references
-                    const projectFromReference = !projectContainsInfoDirectly(project, info) &&
+                    if (!projectContainsInfoDirectly(project, info)) {
                         forEachResolvedProjectReferenceProject(
                             project,
                             child => {
@@ -3033,26 +3034,30 @@ namespace ts.server {
 
                                 // If script info belongs to this child project, use this as default config project
                                 if (projectContainsInfoDirectly(child, info)) {
-                                    configFileName = child.getConfigFilePath();
-                                    configFileErrors = child.getAllProjectErrors();
-                                    this.sendConfigFileDiagEvent(child, info.fileName);
+                                    projectForConfigFileDiag = child;
                                     return child;
+                                }
+
+                                if (!projectForConfigFileDiag && child.containsScriptInfo(info)) {
+                                    projectForConfigFileDiag = child;
                                 }
                             },
                             ProjectReferenceProjectLoadKind.FindCreateLoad,
                             `Creating project referenced in solution ${project.projectName} to find possible configured project for ${info.fileName} to open`
                         );
+                    }
 
-                    if (!projectFromReference && defaultConfigProjectIsCreated) {
+                    if (projectForConfigFileDiag) {
                         // Send the event only if the project got created as part of this open request and info is part of the project
-                        if (!project.containsScriptInfo(info)) {
-                            // Since the file isnt part of configured project, do not send config file info
-                            configFileName = undefined;
+                        configFileName = projectForConfigFileDiag.getConfigFilePath();
+                        if (projectForConfigFileDiag !== project || defaultConfigProjectIsCreated) {
+                            configFileErrors = projectForConfigFileDiag.getAllProjectErrors();
+                            this.sendConfigFileDiagEvent(projectForConfigFileDiag, info.fileName);
                         }
-                        else {
-                            configFileErrors = project.getAllProjectErrors();
-                            this.sendConfigFileDiagEvent(project, info.fileName);
-                        }
+                    }
+                    else {
+                        // Since the file isnt part of configured project, do not send config file info
+                        configFileName = undefined;
                     }
 
                     if (!project.isSolution()) {

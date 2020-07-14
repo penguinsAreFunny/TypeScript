@@ -2278,7 +2278,7 @@ export function bar() {}`
                     expectedOpenEvents: [
                         ...expectedSolutionLoadAndTelemetry(),
                         ...expectedProjectReferenceLoadAndTelemetry(tsconfigIndirect.path),
-                        //configFileDiagEvent(main.path, tsconfigPath, [])
+                        configFileDiagEvent(main.path, tsconfigIndirect.path, [])
                     ],
                     expectedDefaultProject: service => service.configuredProjects.get(tsconfigIndirect.path)!,
                     expectedDefaultConfiguredProject: returnUndefined,
