@@ -2071,14 +2071,15 @@ foo;`
                 ];
             }
 
-            function getIndirectProject(postfix: string) {
+            function getIndirectProject(postfix: string, optionsToExtend?: CompilerOptions) {
                 const tsconfigIndirect: File = {
                     path: `${tscWatch.projectRoot}/tsconfig-indirect${postfix}.json`,
                     content: JSON.stringify({
                         compilerOptions: {
                             composite: true,
                             outDir: "./target/",
-                            baseUrl: "./src/"
+                            baseUrl: "./src/",
+                            ...optionsToExtend
                         },
                         files: [`./indirect${postfix}/main.ts`],
                         references: [{ path: "./tsconfig-src.json" }]
@@ -2255,6 +2256,93 @@ foo;`
                         ]
                     },
                     expectedReloadEvents: expectedReloadEvent(tsconfigPath)
+                });
+            });
+
+            it("disables looking into the child project if disableReferencedProjectLoad is set in indirect project", () => {
+                const { tsconfigIndirect, indirect } = getIndirectProject("1", { disableReferencedProjectLoad: true });
+                const expectedProjectsOnOpen: VerifyProjects = {
+                    configuredProjects: [
+                        { projectName: tsconfigPath, files: [tsconfigPath] },
+                        { projectName: tsconfigIndirect.path, files: [tsconfigIndirect.path, main.path, helper.path, indirect.path, libFile.path] },
+                    ],
+                    inferredProjects: emptyArray
+                };
+                const expectedProjectsOnOnlyDummy: VerifyProjects = {
+                    configuredProjects: emptyArray,
+                    inferredProjects: [
+                        [dummyFilePath, libFile.path],
+                    ]
+                };
+                const expectedProjectsOnDummyOpen: VerifyProjects = {
+                    configuredProjects: expectedProjectsOnOpen.configuredProjects,
+                    inferredProjects: expectedProjectsOnOnlyDummy.inferredProjects,
+                };
+                verifyDisableReferencedProjectLoad({
+                    configRefs: ["./tsconfig-indirect1.json"],
+                    additionalFiles: [tsconfigIndirect, indirect],
+                    expectedOpenEvents: [
+                        ...expectedSolutionLoadAndTelemetry(),
+                        ...expectedProjectReferenceLoadAndTelemetry(tsconfigIndirect.path),
+                        //configFileDiagEvent(main.path, tsconfigPath, [])
+                    ],
+                    expectedDefaultProject: service => service.configuredProjects.get(tsconfigIndirect.path)!,
+                    expectedDefaultConfiguredProject: returnUndefined,
+                    expectedProjectsOnOpen,
+                    expectedProjectsOnDummyOpen,
+                    expectedProjectsOnOnlyDummy,
+                    expectedProjectsOnReload: expectedProjectsOnDummyOpen,
+                    expectedReloadEvents: [
+                        ...expectedReloadEvent(tsconfigPath),
+                        ...expectedReloadEvent(tsconfigIndirect.path),
+                    ]
+                });
+            });
+
+            it("disables looking into the child project if disableReferencedProjectLoad is set in first indirect project but not in another one", () => {
+                const { tsconfigIndirect, indirect } = getIndirectProject("1", { disableReferencedProjectLoad: true });
+                const { tsconfigIndirect: tsconfigIndirect2, indirect: indirect2 } = getIndirectProject("2");
+                const expectedProjectsOnOpen: VerifyProjects = {
+                    configuredProjects: [
+                        { projectName: tsconfigPath, files: [tsconfigPath] },
+                        { projectName: tsconfigIndirect.path, files: [tsconfigIndirect.path, main.path, helper.path, indirect.path, libFile.path] },
+                        { projectName: tsconfigIndirect2.path, files: [tsconfigIndirect2.path, main.path, helper.path, indirect2.path, libFile.path] },
+                        { projectName: tsconfigSrcPath, files: [tsconfigSrcPath, main.path, helper.path, libFile.path] },
+                    ],
+                    inferredProjects: emptyArray
+                };
+                const expectedProjectsOnOnlyDummy: VerifyProjects = {
+                    configuredProjects: emptyArray,
+                    inferredProjects: [
+                        [dummyFilePath, libFile.path],
+                    ]
+                };
+                const expectedProjectsOnDummyOpen: VerifyProjects = {
+                    configuredProjects: expectedProjectsOnOpen.configuredProjects,
+                    inferredProjects: expectedProjectsOnOnlyDummy.inferredProjects,
+                };
+                verifyDisableReferencedProjectLoad({
+                    configRefs: ["./tsconfig-indirect1.json", "./tsconfig-indirect2.json"],
+                    additionalFiles: [tsconfigIndirect, indirect, tsconfigIndirect2, indirect2],
+                    expectedOpenEvents: [
+                        ...expectedSolutionLoadAndTelemetry(),
+                        ...expectedProjectReferenceLoadAndTelemetry(tsconfigIndirect.path),
+                        ...expectedProjectReferenceLoadAndTelemetry(tsconfigIndirect2.path),
+                        ...expectedProjectReferenceLoadAndTelemetry(tsconfigSrcPath),
+                        configFileDiagEvent(main.path, tsconfigSrcPath, [])
+                    ],
+                    expectedDefaultProject: service => service.configuredProjects.get(tsconfigSrcPath)!,
+                    expectedDefaultConfiguredProject: service => service.configuredProjects.get(tsconfigSrcPath)!,
+                    expectedProjectsOnOpen,
+                    expectedProjectsOnDummyOpen,
+                    expectedProjectsOnOnlyDummy,
+                    expectedProjectsOnReload: expectedProjectsOnDummyOpen,
+                    expectedReloadEvents: [
+                        ...expectedReloadEvent(tsconfigPath),
+                        ...expectedReloadEvent(tsconfigIndirect.path),
+                        ...expectedReloadEvent(tsconfigSrcPath),
+                        ...expectedReloadEvent(tsconfigIndirect2.path),
+                    ]
                 });
             });
         });
